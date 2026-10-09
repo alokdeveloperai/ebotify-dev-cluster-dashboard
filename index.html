@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eBotify Dev Cluster — Node & Workload Dashboard</title>
+<style>
+  :root{
+    --bg:#0f0f0e; --panel:#1a1a19; --panel-2:#232322; --line:#33332f;
+    --ink:#ffffff; --ink-2:#c3c2b7; --ink-3:#8a897e;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+    --s5:#d55181; --s6:#2e9e2e; --s7:#9085e9; --s8:#e66767;
+    --good:#199e70; --warn:#c98500; --crit:#e66767;
+    --surface-1:#1a1a19;
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f4f1; --panel:#ffffff; --panel-2:#faf9f6; --line:#e3e2db;
+    --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#86857c;
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+    --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
+    --good:#1baf7a; --warn:#eda100; --crit:#e34948;
+    --surface-1:#ffffff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:28px clamp(16px,4vw,48px) 64px}
+  h1{font-size:22px;margin:0 0 2px;letter-spacing:-.01em}
+  .sub{color:var(--ink-3);font-size:13px;margin-bottom:24px}
+  .topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  .toggle{background:var(--panel);border:1px solid var(--line);color:var(--ink-2);
+    border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12.5px}
+  .toggle:hover{border-color:var(--ink-3)}
+  /* stat tiles */
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:0 0 28px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .tile .k{color:var(--ink-3);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em}
+  .tile .v{font-size:26px;font-weight:600;letter-spacing:-.02em;margin-top:6px}
+  .tile .v small{font-size:14px;color:var(--ink-3);font-weight:400}
+  .tile .bar{margin-top:10px;height:6px;border-radius:4px;background:var(--panel-2);overflow:hidden}
+  .tile .bar>i{display:block;height:100%;border-radius:4px}
+  h2.section{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);
+    margin:34px 0 14px;font-weight:600}
+  /* overview chart */
+  .chartcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:12px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:16px;font-size:12.5px;color:var(--ink-2)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .hrow{display:grid;grid-template-columns:140px 1fr;gap:14px;align-items:center;margin:11px 0}
+  .hrow .lbl{font-size:13px;color:var(--ink-2);text-align:right}
+  .hrow .lbl b{color:var(--ink);display:block;font-weight:600}
+  .track{position:relative;height:30px;background:var(--panel-2);border-radius:6px;overflow:hidden}
+  .track .seg{position:absolute;top:0;height:100%;display:flex;align-items:center;padding-left:8px;
+    font-size:11.5px;font-weight:600;color:#fff;white-space:nowrap}
+  .track .reserved{background:color-mix(in srgb,var(--s4) 32%,transparent);border-right:2px dashed var(--warn)}
+  .track .used{border-radius:6px}
+  .note{color:var(--ink-3);font-size:12px;margin-top:4px}
+  /* node grid */
+  .nodes{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}
+  .node{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .node .hd{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .node .hd .nm{font-size:16px;font-weight:600;letter-spacing:-.01em}
+  .node .hd .ip{color:var(--ink-3);font-size:12px;margin-top:2px;font-variant-numeric:tabular-nums}
+  .pill{font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .pill.cp{background:color-mix(in srgb,var(--s7) 22%,transparent);color:var(--s7);border:1px solid color-mix(in srgb,var(--s7) 40%,transparent)}
+  .pill.wk{background:color-mix(in srgb,var(--s1) 18%,transparent);color:var(--s1);border:1px solid color-mix(in srgb,var(--s1) 36%,transparent)}
+  .spec{padding:12px 18px;display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;border-bottom:1px solid var(--line);font-size:12px;color:var(--ink-2)}
+  .spec div span{color:var(--ink-3)}
+  .spec div b{color:var(--ink);font-weight:600}
+  .meters{padding:14px 18px;border-bottom:1px solid var(--line)}
+  .meter{margin:9px 0}
+  .meter .top{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px}
+  .meter .top .r{color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .meter .bar{height:9px;border-radius:5px;background:var(--panel-2);position:relative;overflow:hidden}
+  .meter .bar>i{position:absolute;left:0;top:0;height:100%;border-radius:5px}
+  .meter .bar>.resmark{position:absolute;top:-3px;width:2px;height:15px;background:var(--warn)}
+  .podwrap{max-height:280px;overflow:auto}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:6px 18px;white-space:nowrap}
+  th{position:sticky;top:0;background:var(--panel);color:var(--ink-3);font-weight:600;
+    font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--line);z-index:1}
+  td{border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
+  tr:last-child td{border-bottom:none}
+  td.n{font-variant-numeric:tabular-nums;text-align:right;color:var(--ink-2)}
+  td.nm{color:var(--ink);max-width:200px;overflow:hidden;text-overflow:ellipsis}
+  .nsdot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px;vertical-align:middle}
+  .podhd{display:flex;justify-content:space-between;align-items:center;padding:11px 18px;cursor:pointer;user-select:none}
+  .podhd:hover{background:var(--panel-2)}
+  .podhd .t{font-size:12px;color:var(--ink-2);font-weight:600}
+  .podhd .c{color:var(--ink-3);font-size:11.5px}
+  .chev{transition:transform .15s;color:var(--ink-3)}
+  .collapsed .chev{transform:rotate(-90deg)}
+  .collapsed .podwrap{display:none}
+  .foot{color:var(--ink-3);font-size:11.5px;margin-top:30px;line-height:1.7}
+  mark{background:color-mix(in srgb,var(--crit) 24%,transparent);color:var(--ink);padding:0 4px;border-radius:3px;font-weight:600}
+</style>
+</head>
+<body>
+<div id="gate" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:99">
+  <div style="background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:30px 28px;width:320px;text-align:center">
+    <div style="font-size:30px;margin-bottom:6px">🔒</div>
+    <div style="font-size:16px;font-weight:600;margin-bottom:4px">Protected dashboard</div>
+    <div style="color:var(--ink-3);font-size:12.5px;margin-bottom:18px">Enter the password to decrypt and view.</div>
+    <input id="pw" type="password" placeholder="Password" autofocus
+      style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:14px;margin-bottom:10px">
+    <button onclick="unlock()" style="width:100%;padding:10px;border:none;border-radius:8px;background:var(--s1);color:#fff;font-size:14px;font-weight:600;cursor:pointer">Unlock</button>
+    <div id="err" style="color:var(--crit);font-size:12px;margin-top:10px;min-height:16px"></div>
+  </div>
+</div>
+<div id="app" style="display:none">
+<div class="topbar">
+  <div>
+    <h1>eBotify Dev Cluster</h1>
+    <div class="sub">Kubernetes v1.30.14 · 5 machines · snapshot 09 Oct 2026 · identifiers anonymised</div>
+  </div>
+  <button class="toggle" onclick="var r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';">◐ Theme</button>
+</div>
+
+<div class="tiles" id="tiles"></div>
+
+<h2 class="section">CPU per node — reserved vs. actually used</h2>
+<div class="chartcard">
+  <div class="legend">
+    <span><i style="background:var(--s1)"></i>Actually used</span>
+    <span><i style="background:color-mix(in srgb,var(--s4) 40%,transparent);border:1px solid var(--warn)"></i>Reserved (scheduler request)</span>
+    <span style="color:var(--ink-3)">— each bar = that node's full CPU capacity</span>
+  </div>
+  <div id="cpuchart"></div>
+  <div class="note">The dashed edge is how much CPU each node has <b>promised</b> to pods; the solid blue is what they <b>actually burn</b>. The gap is idle capacity locked up by over-sized requests.</div>
+</div>
+
+<h2 class="section">Memory used per node</h2>
+<div class="chartcard"><div id="memchart"></div></div>
+
+<h2 class="section">Machines &amp; workloads</h2>
+<div class="nodes" id="nodes"></div>
+
+<div class="foot" id="foot"></div>
+
+</div><script>
+function render(DATA){
+
+const NSCOL = {"kube-system":"--s7","backend":"--s2","chatbot":"--s3","ai-agent":"--s4",
+  "ai-agent-prod":"--s4","frontend":"--s5","monitoring":"--s1","default":"--ink-3",
+  "cert-manager":"--s6","keda":"--s8","flink-operator":"--s6","gluu":"--s8",
+  "litellm":"--s8","velero":"--s1"};
+const nscol = ns => `var(${NSCOL[ns]||'--ink-3'})`;
+const fmtMem = mi => mi>=1024 ? (mi/1024).toFixed(1)+' GiB' : mi+' Mi';
+const fmtCpu = m => m>=1000 ? (m/1000).toFixed(2)+' cores' : m+'m';
+
+const totCap = DATA.reduce((a,n)=>a+n.cpuCap,0);
+const totMemCap = DATA.reduce((a,n)=>a+n.memCapMi,0);
+const totUseCpu = DATA.reduce((a,n)=>a+n.useCpu,0);
+const totUseMem = DATA.reduce((a,n)=>a+n.useMem,0);
+const totReqCpu = DATA.reduce((a,n)=>a+n.reqCpu,0);
+const totPods = DATA.reduce((a,n)=>a+n.pods.length,0);
+
+// stat tiles
+const tiles=[
+ {k:'Machines',v:'5',s:'1 master · 4 workers'},
+ {k:'Total CPU',v:(totCap/1000),s:'cores',pct:totUseCpu/totCap*100,col:'--s1'},
+ {k:'Total memory',v:(totMemCap/1024).toFixed(0),s:'GiB',pct:totUseMem/totMemCap*100,col:'--s3'},
+ {k:'Running pods',v:String(totPods),s:'across 5 nodes'},
+ {k:'CPU in use',v:(totUseCpu/1000).toFixed(2),s:'of '+(totCap/1000)+' cores',pct:totUseCpu/totCap*100,col:'--s1'},
+ {k:'CPU reserved',v:Math.round(totReqCpu/totCap*100)+'%',s:'by pod requests',pct:totReqCpu/totCap*100,col:'--s4'},
+];
+document.getElementById('tiles').innerHTML = tiles.map(t=>`
+ <div class="tile"><div class="k">${t.k}</div>
+ <div class="v">${t.v}${t.s?` <small>${t.s}</small>`:''}</div>
+ ${t.pct!=null?`<div class="bar"><i style="width:${Math.min(100,t.pct).toFixed(1)}%;background:var(${t.col})"></i></div>`:''}
+ </div>`).join('');
+
+// cpu chart — reserved track + used fill, scaled to node capacity
+document.getElementById('cpuchart').innerHTML = DATA.map(n=>{
+  const resPct=Math.min(100,n.reqCpu/n.cpuCap*100), usePct=n.useCpu/n.cpuCap*100;
+  return `<div class="hrow">
+    <div class="lbl"><b>${n.name}</b>${n.cpuCap/1000} cores</div>
+    <div class="track" title="reserved ${resPct.toFixed(0)}% · used ${usePct.toFixed(1)}%">
+      <div class="seg reserved" style="width:${resPct}%"></div>
+      <div class="seg used" style="width:${Math.max(usePct,0)}%;background:var(--s1)">${usePct>=6?usePct.toFixed(0)+'%':''}</div>
+    </div></div>`;
+}).join('');
+
+// mem chart
+const maxMem=Math.max(...DATA.map(n=>n.memCapMi));
+document.getElementById('memchart').innerHTML = DATA.map(n=>{
+  const pct=n.useMem/n.memCapMi*100, w=n.memCapMi/maxMem*100;
+  return `<div class="hrow">
+    <div class="lbl"><b>${n.name}</b>${(n.memCapMi/1024).toFixed(0)} GiB</div>
+    <div class="track" style="width:${w}%" title="${fmtMem(n.useMem)} of ${(n.memCapMi/1024).toFixed(0)} GiB">
+      <div class="seg used" style="width:${pct}%;background:var(--s3)">${fmtMem(n.useMem)} · ${pct.toFixed(0)}%</div>
+    </div></div>`;
+}).join('');
+
+// node cards
+document.getElementById('nodes').innerHTML = DATA.map((n,i)=>{
+  const cpuRes=Math.min(100,n.reqCpu/n.cpuCap*100), cpuUse=n.useCpu/n.cpuCap*100;
+  const memUse=n.useMem/n.memCapMi*100;
+  const rows=n.pods.map(p=>`<tr>
+     <td class="nm" title="${p.name}"><span class="nsdot" style="background:${nscol(p.ns)}"></span>${p.name}</td>
+     <td class="n" style="color:var(--ink-3)">${p.ns}</td>
+     <td class="n">${p.useCpu}m</td>
+     <td class="n">${fmtMem(p.useMem)}</td>
+     <td class="n" style="color:var(--ink-3)">${p.reqCpu}m</td>
+   </tr>`).join('');
+  return `<div class="node" id="node${i}">
+    <div class="hd">
+      <div><div class="nm">${n.name}</div><div class="ip">${n.ip}</div></div>
+      <span class="pill ${n.role==='control-plane'?'cp':'wk'}">${n.role==='control-plane'?'MASTER':'worker'}</span>
+    </div>
+    <div class="spec">
+      <div><span>CPU</span> <b>${n.cpuCap/1000} cores</b></div>
+      <div><span>Memory</span> <b>${(n.memCapMi/1024).toFixed(0)} GiB</b></div>
+      <div><span>Disk</span> <b>${n.diskGi} GiB</b></div>
+      <div><span>Runtime</span> <b>${n.runtime.replace('containerd://','ctr ')}</b></div>
+    </div>
+    <div class="meters">
+      <div class="meter"><div class="top"><span>CPU used</span><span class="r">${fmtCpu(n.useCpu)} used · ${(n.reqCpu/n.cpuCap*100).toFixed(0)}% reserved</span></div>
+        <div class="bar"><i style="width:${cpuUse}%;background:var(--s1)"></i><div class="resmark" style="left:${cpuRes}%"></div></div></div>
+      <div class="meter"><div class="top"><span>Memory used</span><span class="r">${fmtMem(n.useMem)} · ${memUse.toFixed(0)}%</span></div>
+        <div class="bar"><i style="width:${memUse}%;background:var(--s3)"></i></div></div>
+    </div>
+    <div class="podhd" onclick="document.getElementById('node${i}').classList.toggle('collapsed')">
+      <span class="t"><span class="chev">▾</span> ${n.pods.length} pods</span>
+      <span class="c">used ${fmtCpu(n.useCpu)} · ${fmtMem(n.useMem)}</span>
+    </div>
+    <div class="podwrap"><table>
+      <thead><tr><th>Pod</th><th style="text-align:right">Namespace</th><th style="text-align:right">CPU</th><th style="text-align:right">Mem</th><th style="text-align:right">CPU req</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
+}).join('');
+
+document.getElementById('foot').innerHTML =
+ `Source: live <code>kubectl top</code> + pod CPU/memory requests from the dev cluster (host IPs &amp; names anonymised). `+
+ `CPU "reserved" = sum of pod CPU requests; the dashed marker on each node card shows it against capacity. `+
+ `Cluster-wide: <b>${(totUseCpu/1000).toFixed(2)} of ${totCap/1000} cores</b> used (~${(totUseCpu/totCap*100).toFixed(0)}%), `+
+ `<b>${(totUseMem/1024).toFixed(1)} of ${(totMemCap/1024).toFixed(0)} GiB</b> memory used (~${(totUseMem/totMemCap*100).toFixed(0)}%). `+
+ `Memory and raw CPU are plentiful; CPU <i>scheduling</i> is the bottleneck on node01/02/04 due to over-sized requests.`;
+
+}
+
+const ENC="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", ITER=250000;
+const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function unlock(){
+  const pw=document.getElementById('pw').value;
+  const err=document.getElementById('err'); err.textContent='';
+  try{
+    const raw=b64(ENC), salt=raw.slice(0,16), iv=raw.slice(16,28), ct=raw.slice(28);
+    const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
+    const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:ITER,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['decrypt']);
+    const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct);
+    const DATA=JSON.parse(new TextDecoder().decode(pt));
+    document.getElementById('gate').remove();
+    document.getElementById('app').style.display='block';
+    render(DATA);
+  }catch(e){ err.textContent='Wrong password.'; }
+}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('pw'))unlock();});
+
+</script>
+</body>
+</html>
